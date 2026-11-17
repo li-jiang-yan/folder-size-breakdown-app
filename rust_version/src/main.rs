@@ -17,7 +17,12 @@ fn folder_size(path: &Path, tx: &std::sync::mpsc::Sender<WorkerMessage>) -> io::
     for entry in fs::read_dir(path)? {
         let entry = entry?;
         let child_path = entry.path();
+        let file_type = entry.file_type()?;
         let metadata = fs::metadata(&child_path)?;
+
+        if file_type.is_symlink() {
+            continue;
+        }
 
         if metadata.is_dir() {
             // Recursively calculate this subfolder first.
