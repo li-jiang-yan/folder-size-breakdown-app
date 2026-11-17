@@ -152,18 +152,22 @@ impl eframe::App for MyApp {
                 }
             });
 
-            egui::Grid::new("folder_sizes")
-                .striped(true)
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.strong("Folder");
-                    ui.strong("Size (GB)");
-                    ui.end_row();
+                    egui::Grid::new("folder_sizes")
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.strong("Folder");
+                            ui.strong("Size (GB)");
+                            ui.end_row();
 
-                    for row in &self.rows {
-                        ui.label(row.path.display().to_string());
-                        ui.label(format!("{:.3}", row.bytes as f64 / 1_000_000_000.0));
-                        ui.end_row();
-                    }
+                            for row in &self.rows {
+                                ui.label(row.path.display().to_string());
+                                ui.label(format!("{:.3}", row.bytes as f64 / 1_000_000_000.0));
+                                ui.end_row();
+                            }
+                        });
                 });
         });
     }
