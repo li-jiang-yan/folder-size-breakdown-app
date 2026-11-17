@@ -56,7 +56,7 @@ enum WorkerMessage {
 
 #[derive(Default)]
 struct MyApp {
-    picked_path: Option<String>,
+    picked_path: Option<PathBuf>,
     receiver: Option<Receiver<WorkerMessage>>,
     rows: Vec<FolderSize>,
 }
@@ -109,7 +109,7 @@ impl eframe::App for MyApp {
                 if let Some(picked_path) = &self.picked_path {
                     ui.horizontal(|ui| {
                         ui.label("Picked folder:");
-                        ui.monospace(picked_path);
+                        ui.monospace(picked_path.display().to_string());
                     });
                 }
 
@@ -118,7 +118,7 @@ impl eframe::App for MyApp {
                     .clicked()
                     && let Some(path) = rfd::FileDialog::new().pick_folder()
                 {
-                    self.picked_path = Some(path.display().to_string());
+                    self.picked_path = Some(path);
                 }
 
                 if ui
@@ -136,7 +136,7 @@ impl eframe::App for MyApp {
                     self.receiver = Some(rx);
 
                     thread::spawn(move || {
-                        let root = Path::new(&picked_path);
+                        let root = &picked_path;
                         let start = Instant::now();
                         let res = folder_size(root, &tx);
                         println!("Execution time: {:?}", start.elapsed());
