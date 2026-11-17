@@ -69,11 +69,15 @@ impl eframe::App for MyApp {
             .map(|receiver| receiver.try_iter().collect())
             .unwrap_or_default();
 
+        let mut received_folder = false;
         let mut finished = false;
 
         for message in messages {
             match message {
-                WorkerMessage::Folder(row) => self.rows.push(row),
+                WorkerMessage::Folder(row) => {
+                    self.rows.push(row);
+                    received_folder = true;
+                }
 
                 WorkerMessage::Finished(Ok(_total)) => {
                     finished = true;
@@ -83,6 +87,10 @@ impl eframe::App for MyApp {
                     finished = true;
                 }
             }
+        }
+
+        if received_folder {
+            self.rows.sort_by_key(|row| std::cmp::Reverse(row.bytes));
         }
 
         if finished {
@@ -138,8 +146,6 @@ impl eframe::App for MyApp {
                     });
                 }
             });
-
-            self.rows.sort_by_key(|a| std::cmp::Reverse(a.bytes));
 
             egui::Grid::new("folder_sizes")
                 .striped(true)
