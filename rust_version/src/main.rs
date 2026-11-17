@@ -59,8 +59,6 @@ struct MyApp {
     picked_path: Option<String>,
     receiver: Option<Receiver<WorkerMessage>>,
     rows: Vec<FolderSize>,
-    error: Option<std::io::Error>,
-    total_bytes: Option<u64>,
 }
 
 impl eframe::App for MyApp {
@@ -77,13 +75,11 @@ impl eframe::App for MyApp {
             match message {
                 WorkerMessage::Folder(row) => self.rows.push(row),
 
-                WorkerMessage::Finished(Ok(total)) => {
-                    self.total_bytes = Some(total);
+                WorkerMessage::Finished(Ok(_total)) => {
                     finished = true;
                 }
 
-                WorkerMessage::Finished(Err(error)) => {
-                    self.error = Some(error);
+                WorkerMessage::Finished(Err(_error)) => {
                     finished = true;
                 }
             }
@@ -125,6 +121,7 @@ impl eframe::App for MyApp {
                     .clicked()
                     && let Some(picked_path) = &self.picked_path
                 {
+                    self.rows.clear();
                     let picked_path = picked_path.clone();
                     let ctx = ui.ctx().clone();
                     let (tx, rx) = channel();
