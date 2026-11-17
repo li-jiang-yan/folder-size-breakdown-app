@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+
 use eframe::egui;
 use std::fs;
 use std::io;
@@ -43,8 +45,13 @@ fn folder_size(path: &Path, tx: &std::sync::mpsc::Sender<WorkerMessage>) -> io::
 
 fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/app_icon.png"))
+        .expect("Could not load app icon");
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_maximized(true),
+        viewport: egui::ViewportBuilder::default()
+            .with_maximized(true)
+            .with_title("Folder Size Breakdown")
+            .with_icon(icon),
         ..Default::default()
     };
     eframe::run_native(
