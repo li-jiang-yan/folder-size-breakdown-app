@@ -2,6 +2,8 @@ use eframe::egui;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, channel};
+use std::thread;
 use std::time::Instant;
 
 #[allow(dead_code)]
@@ -10,7 +12,6 @@ struct FolderSize {
     bytes: u64,
 }
 
-#[allow(dead_code)]
 fn folder_size(path: &Path, rows: &mut Vec<FolderSize>) -> io::Result<u64> {
     let mut total = 0;
 
@@ -32,6 +33,8 @@ fn folder_size(path: &Path, rows: &mut Vec<FolderSize>) -> io::Result<u64> {
         path: path.to_path_buf(),
         bytes: total,
     });
+
+    println!("{:?} {}", path.to_path_buf(), total);
 
     Ok(total)
 }
@@ -58,13 +61,24 @@ fn main() -> eframe::Result {
 #[derive(Default)]
 struct MyApp {
     picked_path: Option<String>,
-    is_searching: bool,
+    receiver: Option<Receiver<io::Result<u64>>>,
+    result: Option<io::Result<u64>>,
 }
 
 impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Check if background thread has finished
+        if let Some(rx) = &self.receiver
+            && let Ok(res) = rx.try_recv()
+        {
+            self.result = Some(res);
+            self.receiver = None;
+        }
+
         egui::CentralPanel::default().show(ui, |ui| {
-            ui.horizontal(|ui| {
+            let is_running = self.receiver.is_some();
+
+            ui.horizontal(|ui: &mut egui::Ui| {
                 if let Some(picked_path) = &self.picked_path {
                     ui.horizontal(|ui| {
                         ui.label("Picked file:");
@@ -73,7 +87,7 @@ impl eframe::App for MyApp {
                 }
 
                 if ui
-                    .add_enabled(!self.is_searching, egui::Button::new("Browse"))
+                    .add_enabled(!is_running, egui::Button::new("Browse"))
                     .clicked()
                     && let Some(path) = rfd::FileDialog::new().pick_folder()
                 {
@@ -82,16 +96,31 @@ impl eframe::App for MyApp {
 
                 if ui
                     .add_enabled(
-                        !self.is_searching && self.picked_path.is_some(),
+                        !is_running && self.picked_path.is_some(),
                         egui::Button::new("Calculate Size"),
                     )
                     .clicked()
+                    && let Some(picked_path) = &self.picked_path
                 {
-                    self.is_searching = true;
-                    let start = Instant::now();
-                    println!("Execution time: {:?} s", start.elapsed());
+                    let picked_path = picked_path.clone();
+                    let ctx = ui.ctx().clone();
+                    self.result = None;
+
+                    let (tx, rx) = channel();
+                    self.receiver = Some(rx);
+
+                    thread::spawn(move || {
+                        let mut rows = Vec::new();
+                        let root = Path::new(&picked_path);
+                        let start = Instant::now();
+                        let res = folder_size(root, &mut rows);
+                        println!("Execution time: {:?}", start.elapsed());
+
+                        let _ = tx.send(res);
+                        ctx.request_repaint();
+                    });
                 }
-            })
+            });
         });
     }
 }
