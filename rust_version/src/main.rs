@@ -6,13 +6,12 @@ use std::sync::mpsc::{Receiver, channel};
 use std::thread;
 use std::time::Instant;
 
-#[allow(dead_code)]
 struct FolderSize {
     path: PathBuf,
     bytes: u64,
 }
 
-fn folder_size(path: &Path, rows: &mut Vec<FolderSize>) -> io::Result<u64> {
+fn folder_size(path: &Path, tx: &std::sync::mpsc::Sender<WorkerMessage>) -> io::Result<u64> {
     let mut total = 0;
 
     for entry in fs::read_dir(path)? {
@@ -22,30 +21,22 @@ fn folder_size(path: &Path, rows: &mut Vec<FolderSize>) -> io::Result<u64> {
 
         if metadata.is_dir() {
             // Recursively calculate this subfolder first.
-            total += folder_size(&child_path, rows)?;
+            total += folder_size(&child_path, tx)?;
         } else if metadata.is_file() {
             total += metadata.len();
         }
     }
 
     // Record this folder after its contents have been counted.
-    rows.push(FolderSize {
+    let _ = tx.send(WorkerMessage::Folder(FolderSize {
         path: path.to_path_buf(),
         bytes: total,
-    });
-
-    println!("{:?} {}", path.to_path_buf(), total);
+    }));
 
     Ok(total)
 }
 
 fn main() -> eframe::Result {
-    // let start = Instant::now();
-    // let mut rows = Vec::new();
-    // let root: &Path = Path::new("C:\\GIT");
-    // println!("{:?}", folder_size(root, &mut rows));
-    // println!("Execution time: {:?} s", start.elapsed());
-
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_maximized(true),
@@ -58,30 +49,62 @@ fn main() -> eframe::Result {
     )
 }
 
+enum WorkerMessage {
+    Folder(FolderSize),
+    Finished(Result<u64, std::io::Error>),
+}
+
 #[derive(Default)]
 struct MyApp {
     picked_path: Option<String>,
-    receiver: Option<Receiver<io::Result<u64>>>,
-    result: Option<io::Result<u64>>,
+    receiver: Option<Receiver<WorkerMessage>>,
+    rows: Vec<FolderSize>,
+    error: Option<std::io::Error>,
+    total_bytes: Option<u64>,
 }
 
 impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Check if background thread has finished
-        if let Some(rx) = &self.receiver
-            && let Ok(res) = rx.try_recv()
-        {
-            self.result = Some(res);
+        let messages: Vec<WorkerMessage> = self
+            .receiver
+            .as_ref()
+            .map(|receiver| receiver.try_iter().collect())
+            .unwrap_or_default();
+
+        let mut finished = false;
+
+        for message in messages {
+            match message {
+                WorkerMessage::Folder(row) => self.rows.push(row),
+
+                WorkerMessage::Finished(Ok(total)) => {
+                    self.total_bytes = Some(total);
+                    finished = true;
+                }
+
+                WorkerMessage::Finished(Err(error)) => {
+                    self.error = Some(error);
+                    finished = true;
+                }
+            }
+        }
+
+        if finished {
             self.receiver = None;
         }
 
         egui::CentralPanel::default().show(ui, |ui| {
+            if self.receiver.is_some() {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(50));
+            }
+
             let is_running = self.receiver.is_some();
 
             ui.horizontal(|ui: &mut egui::Ui| {
                 if let Some(picked_path) = &self.picked_path {
                     ui.horizontal(|ui| {
-                        ui.label("Picked file:");
+                        ui.label("Picked folder:");
                         ui.monospace(picked_path);
                     });
                 }
@@ -104,23 +127,36 @@ impl eframe::App for MyApp {
                 {
                     let picked_path = picked_path.clone();
                     let ctx = ui.ctx().clone();
-                    self.result = None;
-
                     let (tx, rx) = channel();
                     self.receiver = Some(rx);
 
                     thread::spawn(move || {
-                        let mut rows = Vec::new();
                         let root = Path::new(&picked_path);
                         let start = Instant::now();
-                        let res = folder_size(root, &mut rows);
+                        let res = folder_size(root, &tx);
                         println!("Execution time: {:?}", start.elapsed());
 
-                        let _ = tx.send(res);
+                        let _ = tx.send(WorkerMessage::Finished(res));
                         ctx.request_repaint();
                     });
                 }
             });
+
+            self.rows.sort_by_key(|a| std::cmp::Reverse(a.bytes));
+
+            egui::Grid::new("folder_sizes")
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.strong("Folder");
+                    ui.strong("Size (GB)");
+                    ui.end_row();
+
+                    for row in &self.rows {
+                        ui.label(row.path.display().to_string());
+                        ui.label(format!("{:.3}", row.bytes as f64 / 1_000_000_000.0));
+                        ui.end_row();
+                    }
+                });
         });
     }
 }
