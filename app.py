@@ -46,13 +46,19 @@ class SizeCalculator(QtCore.QRunnable):
     @QtCore.Slot()
     def run(self):
         def calculate_entry_size(entry):
-            if entry.is_file():
-                return entry.stat().st_size
+            try:
+                if entry.is_file():
+                    return entry.stat().st_size
 
-            folder_path = str(entry.resolve())
-            folder_size = sum(calculate_entry_size(child_entry) for child_entry in entry.iterdir())
-            self.signals.size_calculated.emit(folder_path, folder_size)
-            return folder_size
+                folder_path = str(entry.resolve())
+                folder_size = sum(
+                    calculate_entry_size(child_entry) for child_entry in entry.iterdir()
+                )
+                if folder_size > 1e9:
+                    self.signals.size_calculated.emit(folder_path, folder_size)
+                return folder_size
+            except Exception as _:
+                return 0
 
         try:
             calculate_entry_size(self.folder_path)

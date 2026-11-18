@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use eframe::egui;
 use std::fs;
@@ -28,17 +28,19 @@ fn folder_size(path: &Path, tx: &std::sync::mpsc::Sender<WorkerMessage>) -> io::
 
         if metadata.is_dir() {
             // Recursively calculate this subfolder first.
-            total += folder_size(&child_path, tx)?;
+            total += folder_size(&child_path, tx).unwrap_or(0);
         } else if metadata.is_file() {
             total += metadata.len();
         }
     }
 
     // Record this folder after its contents have been counted.
-    let _ = tx.send(WorkerMessage::Folder(FolderSize {
-        path: path.to_path_buf(),
-        bytes: total,
-    }));
+    if total > 1_000_000_000 {
+        let _ = tx.send(WorkerMessage::Folder(FolderSize {
+            path: path.to_path_buf(),
+            bytes: total,
+        }));
+    }
 
     Ok(total)
 }
